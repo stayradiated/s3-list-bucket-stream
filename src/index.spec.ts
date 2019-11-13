@@ -77,12 +77,11 @@ test.cb('It should emit all the files from different pages', (t) => {
     (s3 as unknown) as S3,
     'some-bucket',
     '/some/prefix',
-    undefined,
     {
       MaxKeys: 2,
     },
   )
-  stream.on('data', (item) => records.push(item.toString()))
+  stream.on('data', (item) => records.push(item))
   stream.on('error', t.fail)
   stream.on('page', () => numPages++)
   stream.on('end', () => {
@@ -116,9 +115,6 @@ test.cb(
       (s3 as unknown) as S3,
       'some-bucket',
       '/some/prefix',
-      {
-        fullMetadata: true,
-      },
     )
     stream.on('data', (item) => records.push(item))
     stream.on('error', t.fail)
@@ -178,7 +174,7 @@ test.cb('The stream should pause if reader buffer is full', (t) => {
   const records = [] as string[]
   let emittedStopped = false
   let emittedRestarted = false
-  stream.on('data', (item) => records.push(item.toString()))
+  stream.on('data', (item) => records.push(item))
   stream.on('stopped', () => (emittedStopped = true))
   stream.on('restarted', () => (emittedRestarted = true))
   stream.on('error', t.fail)

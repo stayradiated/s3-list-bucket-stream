@@ -8,7 +8,9 @@ This is a fork of
 
 The main changes are:
 
-- No functional changes yet...
+- Always outputs full metadata instead of path names
+- Support for using the S3 `Delimiter` option
+- Emits a `prefix` event for each of the `CommonPrefixes` in the response
 
 Other changes include:
 
@@ -20,7 +22,7 @@ Other changes include:
 Using npm:
 
 ```bash
-npm install --save @stayradiated/s3-list-bucket-stream
+npm install --save aws-sdk@2 @stayradiated/s3-list-bucket-stream
 ```
 
 **Note:** In order to use this package you need to have the
@@ -33,33 +35,6 @@ npm install --save @stayradiated/s3-list-bucket-stream
 Here's a simple example that allows to list all the files in a bucket
 
 ```javascript
-const S3ListBucketStream = require('@stayradiated/s3-list-bucket-stream')
-
-// create the S3 client
-const AWS = require('aws-sdk')
-const s3 = new AWS.S3()
-
-// create the instance for the stream
-const listBucketStream = new S3ListBucketStream(s3, 'some-bucket', 'path/to/files')
-
-// attach an 'on data' event which will start the stream flow
-listBucketStream
-  .on('data', (key) => console.log(key.toString()))
-```
-
-This will output:
-
-```plain
-path/to/files/file1
-path/to/files/file2
-path/to/files/file3
-...
-```
-
-If you want to emit objects containing the entire S3 object metadata, you can
-do so by enabling the `fullMetadata` option while creating the stream instance:
-
-```javascript
 const S3ListBucketStream = require('@stayadiated/s3-list-bucket-stream')
 
 // create the S3 client
@@ -69,12 +44,11 @@ const s3 = new AWS.S3()
 // create the instance for the stream
 const listBucketStream = new S3ListBucketStream(
   s3,
-  'some-bucket',
+  'your-bucket-name',
   'path/to/files',
-  { fullMetadata: true }
 )
 
-// attach an 'on data' event which will start the stream flow
+// listen to the 'data' event - this will start the stream
 listBucketStream
   .on('data', console.log)
 ```
@@ -118,25 +92,15 @@ as constructor arguments:
  - `bucket` (`string`): The name of the bucket to list
  - `[bucketPrefix]` (`string`): A prefix to list only files with the given
    prefix (optional)
- - `[options]` (`S3ListBucketStreamOptions`): Stream options (optional)
  - `[listObjectsV2args]` (`ListObjectsV2args`): Extra arguments to be passed to
    the listObjectsV2 call in the S3 client (optional)
-
-#### S3ListBucketStreamOptions
-
-`S3ListBucketStreamOptions` is an object that can contain arbitrary `Readable`
-stream options.  You can also specify the following extra options:
-
- - `fullMetadata` (`boolean`): switches the stream to `objectMode: true` and
-   emits objects containing the full metadata for a given bucket object. See
-   the example above for more details (default value is `false`).
 
 #### ListObjectsV2args
 
 `ListObjectsV2args` is an object that can contain arbitrary [`s3.listObjectsV2`
 parameters](https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#listObjectsV2-property)
-like `MaxKeys` (set to `1000` by default), `FetchOwner`, `RequestPayer` or
-`StartAfter`.
+like `Delimiter`, `MaxKeys` (set to `1000` by default), `FetchOwner`,
+`RequestPayer` or `StartAfter`.
 
 These parameters will be propagated to every internal `listObjectsV2` call to
 the S3 client provided at construction time.
@@ -144,7 +108,6 @@ the S3 client provided at construction time.
 **Note**: be careful not to specify values for `Bucket`, `Prefix` and
 `ContinuationToken` as these values will be managed by the internals according
 to the internal state and configuration of the given stream instance.
-
 
 ### Events
 
@@ -162,6 +125,8 @@ instance:
  - `stopped`: fired when the readable buffer is full and the fetch from S3 is
    stopped
  - `restarted`: fired when the fetch from S3 is restarted after a pause
+ - `prefix`: fired when a new prefix is found - this is useful for listing
+   directories when using the `{ Delimiter: '/' }` option.
 
 ## Contributing
 

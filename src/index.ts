@@ -1,18 +1,8 @@
-import { Readable, ReadableStateOptions } from 'readable-stream'
+import { Readable } from 'readable-stream'
 import S3, {
   ListObjectsV2Request,
   ListObjectsV2Output,
 } from 'aws-sdk/clients/s3'
-
-type S3ListBucketStreamOptions = ReadableStateOptions & {
-  // If true the stream will emit full Metadata objects for every listed bucket
-  // object. Default `false`
-  fullMetadata?: boolean,
-}
-
-const defaultOptions = {
-  fullMetadata: false,
-}
 
 const defaultListObjectsV2Options: Partial<ListObjectsV2Request> = {
   MaxKeys: 1000,
@@ -23,7 +13,6 @@ class S3ListBucketStream extends Readable {
   private _s3: S3
   private _bucket: string
   private _bucketPrefix: string
-  private _fullMetadata: boolean
   private _listObjectsV2args: Partial<ListObjectsV2Request>
   private _lastResponse: ListObjectsV2Output
   private _currentIndex: number
@@ -37,26 +26,18 @@ class S3ListBucketStream extends Readable {
     bucket: string,
     // An optional prefix to list only files with the given prefix
     bucketPrefix = '',
-    // Stream options
-    options: S3ListBucketStreamOptions = {},
     // Extra arguments to be passed to the listObjectsV2 call in the S3 client
     listObjectsV2args: Partial<ListObjectsV2Request> = {},
   ) {
-    const mergedOptions = { ...defaultOptions, ...options }
-
-    // forces object mode if full metadata is enabled
-    if (mergedOptions.fullMetadata) {
-      mergedOptions.objectMode = true
-    }
-
     // invoke parent constructor
-    super(mergedOptions)
+    super({
+      objectMode: true,
+    })
 
     // config
     this._s3 = s3
     this._bucket = bucket
     this._bucketPrefix = bucketPrefix
-    this._fullMetadata = mergedOptions.fullMetadata
     this._listObjectsV2args = {
       ...defaultListObjectsV2Options,
       ...listObjectsV2args,
@@ -98,22 +79,28 @@ class S3ListBucketStream extends Readable {
     try {
       this._stopped = false
       this.emit('restarted', true)
+
       while (true) {
         if (
-          typeof this._lastResponse === 'undefined' ||
+          this._lastResponse == null ||
           this._currentIndex >= this._lastResponse.Contents.length
         ) {
-          if (this._lastResponse && !this._lastResponse.IsTruncated) {
+          if (this._lastResponse != null && !this._lastResponse.IsTruncated) {
             const result = this.push(null) // stream is over
             return result
           }
           await this._loadNextPage()
+
+          if (this._lastResponse.CommonPrefixes != null) {
+            for (const item of this._lastResponse.CommonPrefixes) {
+              this.emit('prefix', item.Prefix)
+            }
+          }
         }
 
-        const metadata = this._lastResponse.Contents[this._currentIndex++]
-        const chunkToPush = this._fullMetadata ? metadata : metadata.Key // return only the object key (file name)
+        const chunkToPush = this._lastResponse.Contents[this._currentIndex++]
 
-        if (!this.push(chunkToPush)) {
+        if (chunkToPush != null && !this.push(chunkToPush)) {
           this._stopped = true
           this.emit('stopped', true)
           break // reader buffer full, stop until next _read call
