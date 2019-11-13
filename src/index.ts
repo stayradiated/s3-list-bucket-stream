@@ -1,38 +1,48 @@
-const { Readable } = require('readable-stream')
+import { Readable, ReadableStateOptions } from 'readable-stream'
+import S3, {
+  ListObjectsV2Request,
+  ListObjectsV2Output,
+} from 'aws-sdk/clients/s3'
 
-/**
- * Stream options
- * @typedef {Object} S3ListBucketStreamOptions
- * @property {boolean} fullMetadata - If true the stream will emit full Metadata objects for every listed bucket object. Default `false`
- */
+type S3ListBucketStreamOptions = ReadableStateOptions & {
+  // If true the stream will emit full Metadata objects for every listed bucket
+  // object. Default `false`
+  fullMetadata?: boolean,
+}
+
 const defaultOptions = {
-  fullMetadata: false
+  fullMetadata: false,
 }
 
-/**
- * listObjectsV2args
- * @typedef {Object} ListObjectsV2args
- * @property {number} MaxKeys - The number of keys to list in every call. Default `1000`
- */
-const defaultListObjectsV2Options = {
-  MaxKeys: 1000
+const defaultListObjectsV2Options: Partial<ListObjectsV2Request> = {
+  MaxKeys: 1000,
 }
 
-/**
- * Readable stream that lists all the objects form an S3 bucket recursively
- * @extends Readable
- */
+// Readable stream that lists all the objects form an S3 bucket recursively
 class S3ListBucketStream extends Readable {
-  /**
-   * Initialize a new instance of S3ListBucketStream (invoked with new S3ListBucketStream)
-   * @param {Object} s3                                         An S3 client from the AWS SDK (or any object that implements a compatible `listObjectsV2` method)
-   * @param {string} bucket                                     The name of the bucket to list
-   * @param {string} bucketPrefix                               An optional prefix to list only files with the given prefix
-   * @param {S3ListBucketStreamOptions} [options={}]            Stream options
-   * @param {ListObjectsV2args} [listObjectsV2args={}]          Extra arguments to be passed to the listObjectsV2 call in the S3 client
-   */
-  constructor (s3, bucket, bucketPrefix = '', options = {}, listObjectsV2args = {}) {
-    const mergedOptions = Object.assign({}, defaultOptions, options)
+  private _s3: S3
+  private _bucket: string
+  private _bucketPrefix: string
+  private _fullMetadata: boolean
+  private _listObjectsV2args: Partial<ListObjectsV2Request>
+  private _lastResponse: ListObjectsV2Output
+  private _currentIndex: number
+  private _stopped: boolean
+
+  constructor (
+    // An S3 client from the AWS SDK (or any object that implements a
+    // compatible `listObjectsV2` method)
+    s3: S3,
+    // The name of the bucket to list
+    bucket: string,
+    // An optional prefix to list only files with the given prefix
+    bucketPrefix = '',
+    // Stream options
+    options: S3ListBucketStreamOptions = {},
+    // Extra arguments to be passed to the listObjectsV2 call in the S3 client
+    listObjectsV2args: Partial<ListObjectsV2Request> = {},
+  ) {
+    const mergedOptions = { ...defaultOptions, ...options }
 
     // forces object mode if full metadata is enabled
     if (mergedOptions.fullMetadata) {
@@ -47,7 +57,10 @@ class S3ListBucketStream extends Readable {
     this._bucket = bucket
     this._bucketPrefix = bucketPrefix
     this._fullMetadata = mergedOptions.fullMetadata
-    this._listObjectsV2args = Object.assign({}, defaultListObjectsV2Options, listObjectsV2args)
+    this._listObjectsV2args = {
+      ...defaultListObjectsV2Options,
+      ...listObjectsV2args,
+    }
 
     // internal state
     this._lastResponse = undefined
@@ -62,7 +75,7 @@ class S3ListBucketStream extends Readable {
         Prefix: this._bucketPrefix,
         ContinuationToken: this._lastResponse
           ? this._lastResponse.NextContinuationToken
-          : undefined
+          : undefined,
       }
 
       const params = Object.assign({}, this._listObjectsV2args, currentParams)
@@ -91,16 +104,14 @@ class S3ListBucketStream extends Readable {
           this._currentIndex >= this._lastResponse.Contents.length
         ) {
           if (this._lastResponse && !this._lastResponse.IsTruncated) {
-            return this.push(null) // stream is over
+            const result = this.push(null) // stream is over
+            return result
           }
           await this._loadNextPage()
         }
 
-        let chunkToPush = this._lastResponse.Contents[this._currentIndex++]
-        if (!this._fullMetadata) {
-          // return only the object key (file name)
-          chunkToPush = chunkToPush.Key
-        }
+        const metadata = this._lastResponse.Contents[this._currentIndex++]
+        const chunkToPush = this._fullMetadata ? metadata : metadata.Key // return only the object key (file name)
 
         if (!this.push(chunkToPush)) {
           this._stopped = true
@@ -113,7 +124,7 @@ class S3ListBucketStream extends Readable {
     }
   }
 
-  _read (size) {
+  _read (size: number) {
     if (this._stopped) {
       // if stopped, restart reading from the source S3 api
       this._startRead()
@@ -121,4 +132,4 @@ class S3ListBucketStream extends Readable {
   }
 }
 
-module.exports = S3ListBucketStream
+export default S3ListBucketStream
