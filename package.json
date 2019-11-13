@@ -26,7 +26,10 @@
     "List bucket",
     "Object"
   ],
-  "author": "Luciano Mammino",
+  "contributors": [
+    "George Czabania <george@czabania.com>",
+    "Luciano Mammino"
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/stayradiated/s3-list-bucket-stream/issues"
@@ -42,5 +45,10 @@
   "devDependencies": {
     "@stayradiated/pkg": "3.6.0",
     "aws-sdk": "2.570.0"
+  },
+  "release-it": {
+    "hooks": {
+      "after:bump": "npm run build"
+    }
   }
 }
